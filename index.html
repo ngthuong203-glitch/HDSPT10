@@ -94,6 +94,21 @@
   #live-zoom img { max-width:94vw; max-height:76vh; object-fit:contain; border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
   #live-zoom .zoom-cap { color:#fff; font-size:20px; margin-top:14px; text-align:center; }
   #live-zoom .zoom-hint { color:#cbd5e1; font-size:14px; margin-top:6px; }
+  /* ---- Quay tên trúng thưởng (chỉ ở màn chiếu) ---- */
+  .drawbtn { cursor:pointer; border:0; border-radius:999px; padding:8px 16px; font-size:14px; font-weight:700; background:#334155; color:var(--text); margin-left:12px; }
+  #live-draw { position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.93); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; text-align:center; overflow:auto; }
+  #live-draw h2 { font-size:38px; margin:0 0 8px; }
+  .draw-name { font-size:64px; font-weight:900; letter-spacing:1px; margin:18px 0; min-height:80px; color:#f59e0b; word-break:break-word; }
+  .draw-winners { display:flex; gap:18px; justify-content:center; flex-wrap:wrap; margin:10px 0 6px; }
+  .draw-winner { background:#1e293b; border:2px solid #f59e0b; border-radius:16px; padding:14px; width:340px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
+  .draw-winner img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:10px; display:block; }
+  .draw-winner-name { font-size:32px; font-weight:800; margin-top:10px; word-break:break-word; }
+  .draw-actions { justify-content:center; margin-top:16px; }
+  .draw-actions button { padding:8px 16px; font-size:14px; }
+  /* Sân khấu người thắng: các ảnh còn lại thành viền nhỏ bao quanh cặp đôi ở giữa */
+  .draw-ring { position:absolute; inset:0; overflow:hidden; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); grid-auto-rows:110px; gap:6px; padding:10px; opacity:.45; pointer-events:none; }
+  .draw-ring img { width:100%; height:100%; object-fit:cover; border-radius:8px; display:block; }
+  .draw-front { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; max-height:100%; overflow:auto; }
   .emptywall svg { display:block; margin:16px auto; }
   [hidden] { display:none !important; }
 </style>
@@ -106,6 +121,7 @@
     <a href="?view=join">Người tham dự</a>
     <a href="?view=live">Màn chiếu</a>
     <a href="?view=control">Điều khiển</a>
+    <button id="btn-draw" type="button" class="drawbtn" hidden>🎲 Quay tên trúng thưởng</button>
   </nav>
 </header>
 
@@ -285,6 +301,21 @@
     <div id="zoom-cap" class="zoom-cap"></div>
     <button id="zoom-close" type="button" style="margin-top:14px;">✕ Đóng</button>
     <p class="zoom-hint">Bấm vào ảnh hoặc phím Esc để đóng</p>
+  </div>
+  <div id="live-draw" hidden>
+    <div id="draw-ring" class="draw-ring" hidden></div>
+    <div class="draw-front">
+      <h2>🎲 Quay tên trúng thưởng</h2>
+      <p id="draw-status" class="dim"></p>
+      <div id="draw-cycle" class="draw-name">—</div>
+      <div id="draw-winners" class="draw-winners"></div>
+      <p id="draw-note" class="dim"></p>
+      <div class="row draw-actions">
+        <button id="btn-draw-again" type="button" hidden>↻ Quay lại</button>
+        <button id="btn-draw-close" type="button" class="secondary">✕ Đóng</button>
+      </div>
+      <p class="dim" style="font-size:14px;">Bấm ra ngoài hoặc phím Esc để đóng</p>
+    </div>
   </div>
 </main>
 
@@ -505,6 +536,47 @@ function makeRoomCode() {
 
 function sanitizeFileName(name) {
   return String(name || 'anh').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'anh';
+}
+
+/* Quay tên trúng thưởng: pool lấy từ ảnh đã tải của phiên đang chiếu.
+   Ảnh trong wallPhotos xếp mới nhất trước, nên lần xuất hiện đầu tiên của
+   một tên chính là ảnh mới nhất của người đó trong phiên. */
+function buildDrawPool(photos) {
+  var seen = {}, pool = [];
+  (photos || []).forEach(function (p) {
+    if (!p) return;
+    var name = String(p.uploader_name == null ? '' : p.uploader_name).trim();
+    if (!name) return;
+    var key = name.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    pool.push({ name: name, photo: p });
+  });
+  return pool;
+}
+
+function pickDrawWinners(pool, randomFn) {
+  var rnd = randomFn || Math.random;
+  var copy = (pool || []).slice(), winners = [];
+  while (copy.length > 0 && winners.length < 2) {
+    var i = Math.floor(rnd() * copy.length);
+    winners.push(copy.splice(i, 1)[0]);
+  }
+  return winners;
+}
+
+/* Ảnh nhỏ viền quanh sân khấu: mọi ảnh đã tải trừ đúng 2 ảnh nổi bật của
+   người thắng (ảnh khác của cùng người vẫn giữ), giữ thứ tự mới nhất trước,
+   giới hạn để màn chiếu không nặng. */
+function buildDrawRingPhotos(photos, winnerPhotoIds, cap) {
+  var excluded = {}, out = [], limit = cap == null ? 80 : cap;
+  (winnerPhotoIds || []).forEach(function (id) { excluded[id] = true; });
+  (photos || []).forEach(function (p) {
+    if (!p || out.length >= limit) return;
+    if (excluded[p.id]) return;
+    out.push(p);
+  });
+  return out;
 }
 </script>
 <script>
@@ -959,6 +1031,96 @@ function sanitizeFileName(name) {
     $('zoom-img').removeAttribute('src');
   }
 
+  /* ---------------- Quay tên trúng thưởng (chỉ ở màn chiếu) ---------------- */
+  var drawPool = [], drawWinners = [], drawTimer = null;
+
+  function closeDraw() {
+    if (drawTimer) { clearTimeout(drawTimer); drawTimer = null; }
+    $('draw-ring').innerHTML = '';
+    $('draw-ring').hidden = true;
+    $('live-draw').hidden = true;
+  }
+
+  function buildDrawRing() {
+    var ring = $('draw-ring');
+    ring.innerHTML = '';
+    var winnerIds = drawWinners.map(function (w) { return w.photo.id; });
+    buildDrawRingPhotos(wallPhotos, winnerIds, 80).forEach(function (p) {
+      var img = document.createElement('img');
+      img.src = publicUrl(p.image_path);
+      img.alt = '';
+      ring.appendChild(img);
+    });
+    ring.hidden = false;
+  }
+
+  function renderDrawWinner(card, w) {
+    var img = document.createElement('img');
+    img.src = publicUrl(w.photo.image_path);
+    img.alt = w.name;
+    var nm = document.createElement('div');
+    nm.className = 'draw-winner-name';
+    nm.textContent = w.name;
+    card.appendChild(img);
+    card.appendChild(nm);
+  }
+
+  function startDrawSpin() {
+    if (drawTimer) { clearTimeout(drawTimer); drawTimer = null; }
+    /* Chụp nhanh pool lúc bắt đầu quay: ảnh mới về sau đó không làm xáo trộn vòng quay này. */
+    drawPool = buildDrawPool(wallPhotos);
+    var cycle = $('draw-cycle'), winnersBox = $('draw-winners');
+    winnersBox.innerHTML = '';
+    $('draw-ring').innerHTML = '';
+    $('draw-ring').hidden = true;
+    $('draw-note').textContent = '';
+    $('btn-draw-again').hidden = true;
+    if (drawPool.length < 2) {
+      cycle.hidden = true;
+      winnersBox.hidden = true;
+      $('draw-status').textContent = 'Chưa quay được';
+      $('draw-note').textContent = 'Chưa đủ 2 người có tên để quay. Chỉ những thiệp có ghi tên lúc gửi mới được quay — cô nhắc cả lớp ghi tên khi gửi thiệp nhé.';
+      $('live-draw').hidden = false;
+      return;
+    }
+    drawWinners = pickDrawWinners(drawPool);
+    cycle.hidden = false;
+    winnersBox.hidden = false;
+    $('draw-status').textContent = 'Đang quay…';
+    $('live-draw').hidden = false;
+    var step = 0, lastIdx = -1;
+    (function tick() {
+      var idx = Math.floor(Math.random() * drawPool.length);
+      if (drawPool.length > 1 && idx === lastIdx) idx = (idx + 1) % drawPool.length;
+      lastIdx = idx;
+      cycle.textContent = drawPool[idx].name;
+      step++;
+      if (step < 26) {
+        drawTimer = setTimeout(tick, 50 + step * step * 0.55);
+      } else {
+        drawTimer = setTimeout(function () {
+          var c1 = document.createElement('div');
+          c1.className = 'draw-winner';
+          renderDrawWinner(c1, drawWinners[0]);
+          winnersBox.appendChild(c1);
+          cycle.textContent = '🎉 ' + drawWinners[0].name;
+          $('draw-status').textContent = 'Người trúng thưởng thứ nhất!';
+          drawTimer = setTimeout(function () {
+            var c2 = document.createElement('div');
+            c2.className = 'draw-winner';
+            renderDrawWinner(c2, drawWinners[1]);
+            winnersBox.appendChild(c2);
+            buildDrawRing();
+            cycle.textContent = '🎉 Chúc mừng!';
+            $('draw-status').textContent = 'Chúc mừng 2 người trúng thưởng!';
+            $('btn-draw-again').hidden = false;
+            drawTimer = null;
+          }, 900);
+        }, 400);
+      }
+    })();
+  }
+
   function updateQrSize() {
     var bar = $('live-qrbar'); if (!bar) return;
     var n = wallPhotos.length;
@@ -1078,6 +1240,14 @@ function sanitizeFileName(name) {
     $('btn-live-refresh').addEventListener('click', refreshWall);
     $('live-zoom').addEventListener('click', closeZoom);
     $('zoom-close').addEventListener('click', closeZoom);
+    $('btn-draw').hidden = false;
+    $('btn-draw').addEventListener('click', startDrawSpin);
+    $('btn-draw-close').addEventListener('click', closeDraw);
+    $('btn-draw-again').addEventListener('click', startDrawSpin);
+    $('live-draw').addEventListener('click', function (e) { if (e.target === $('live-draw')) closeDraw(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('live-draw').hidden) closeDraw();
+    });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && !$('live-zoom').hidden) closeZoom();
     });
