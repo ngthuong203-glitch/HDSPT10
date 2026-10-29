@@ -76,6 +76,13 @@
   .qrbar .code { font-size:32px; font-weight:900; letter-spacing:6px; color:#0f172a; }
   .qrbar .dim { color:#475569; }
   #top-qr { width:clamp(240px, 30vmin, 360px); margin:0 auto; }
+  /* QR nhỏ dần theo số ảnh, tự động — không thêm nút bấm lúc chiếu */
+  .qrbar.qr-1-2 #top-qr { width:clamp(200px, 22vmin, 300px); }
+  .qrbar.qr-3-5 #top-qr { width:clamp(160px, 16vmin, 240px); }
+  .qrbar.qr-6plus #top-qr { width:clamp(120px, 12vmin, 180px); }
+  .qrbar.qr-6plus { padding:10px 16px 8px; }
+  .qrbar.qr-6plus .qr-label { font-size:16px; margin:6px 0 2px; }
+  .qrbar.qr-6plus .code { font-size:24px; }
   #top-qr svg, #empty-qr svg { width:100%; height:auto; display:block; }
   #empty-qr { width:clamp(320px, 52vmin, 560px); margin:20px auto; background:#fff; border-radius:18px; padding:18px; box-shadow:0 8px 30px rgba(0,0,0,.35); }
   .badge { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:30; background:var(--accent); color:#1e293b; font-weight:800; padding:10px 20px; border-radius:999px; font-size:18px; box-shadow:0 6px 24px rgba(0,0,0,.5); }
@@ -952,12 +959,22 @@ function sanitizeFileName(name) {
     $('zoom-img').removeAttribute('src');
   }
 
+  function updateQrSize() {
+    var bar = $('live-qrbar'); if (!bar) return;
+    var n = wallPhotos.length;
+    bar.classList.remove('qr-1-2', 'qr-3-5', 'qr-6plus');
+    if (n >= 6) bar.classList.add('qr-6plus');
+    else if (n >= 3) bar.classList.add('qr-3-5');
+    else if (n >= 1) bar.classList.add('qr-1-2');
+  }
+
   function renderWall() {
     var wall = $('wall');
     wall.innerHTML = '';
     wallPhotos.forEach(function (p) { wall.appendChild(photoFigure(p, false)); });
     $('live-empty').hidden = wallPhotos.length > 0;
     $('live-qrbar').hidden = wallPhotos.length === 0;
+    updateQrSize();
   }
 
   function prependPhoto(p) {
@@ -966,6 +983,7 @@ function sanitizeFileName(name) {
     $('wall').prepend(photoFigure(p, true));
     $('live-empty').hidden = true;
     $('live-qrbar').hidden = false;
+    updateQrSize();
   }
 
   function updatePausedBadge() {
